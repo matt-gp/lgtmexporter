@@ -1,0 +1,44 @@
+type: lgtm
+display_name: LGTM Exporter
+
+status:
+  class: exporter
+  stability:
+    alpha: [logs, metrics, traces ]
+  distributions: [contrib]
+  codeowners:
+    active: [matt-gp]
+
+tests:
+  config:
+    logs:
+      endpoint: http://localhost:3100/otlp/v1/logs
+    metrics:
+      endpoint: http://localhost:8080/otlp/v1/metrics
+    traces:
+      endpoint: http://localhost:3201/v1/traces
+
+telemetry:
+  metrics:
+    exporter_lgtm_sent_samples:
+      enabled: true
+      stability: development
+      description: Number of LGTM records sent to the LGTM endpoint regardless of success or failure.
+      sum:
+        value_type: int
+        monotonic: true
+    exporter_lgtm_sent_requests:
+      enabled: true
+      stability: development
+      description: Number of LGTM requests sent to the LGTM endpoint regardless of success or failure.
+      sum:
+        value_type: int
+        monotonic: true
+    exporter_lgtm_write_latency:
+      enabled: true
+      stability: development
+      description: Response latency in ms for the LGTM writes.
+      unit: ms
+      histogram:
+        value_type: int
+        bucket_boundaries: [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000]

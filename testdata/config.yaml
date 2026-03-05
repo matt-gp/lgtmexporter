@@ -1,0 +1,202 @@
+# Basic configuration with all three signals
+lgtm:
+  logs:
+    endpoint: http://localhost:3100/otlp/v1/logs
+  metrics:
+    endpoint: http://localhost:8080/otlp/v1/metrics
+  traces:
+    endpoint: http://localhost:3201/v1/traces
+
+# Configuration with only logs
+lgtm/logs_only:
+  logs:
+    endpoint: http://loki:3100/otlp/v1/logs
+
+# Configuration with only metrics
+lgtm/metrics_only:
+  metrics:
+    endpoint: http://mimir:8080/otlp/v1/metrics
+
+# Configuration with only traces
+lgtm/traces_only:
+  traces:
+    endpoint: http://tempo:3201/v1/traces
+
+# Configuration with TLS
+lgtm/with_tls:
+  logs:
+    endpoint: https://loki:3100/otlp/v1/logs
+    tls:
+      insecure_skip_verify: false
+      cert_file: /certs/client.crt
+      key_file: /certs/client.key
+      ca_file: /certs/ca.crt
+  metrics:
+    endpoint: https://mimir:8080/otlp/v1/metrics
+    tls:
+      insecure_skip_verify: false
+      cert_file: /certs/client.crt
+      key_file: /certs/client.key
+      ca_file: /certs/ca.crt
+  traces:
+    endpoint: https://tempo:3201/v1/traces
+    tls:
+      insecure_skip_verify: false
+      cert_file: /certs/client.crt
+      key_file: /certs/client.key
+      ca_file: /certs/ca.crt
+
+# Configuration with insecure TLS (skip certificate verification)
+lgtm/insecure_tls:
+  logs:
+    endpoint: https://loki:3100/otlp/v1/logs
+    tls:
+      insecure_skip_verify: true
+
+# Configuration with authentication extension
+lgtm/with_auth:
+  logs:
+    endpoint: http://loki:3100/otlp/v1/logs
+    auth:
+      authenticator: basicauth
+  metrics:
+    endpoint: http://mimir:8080/otlp/v1/metrics
+    auth:
+      authenticator: bearertokenauth
+  traces:
+    endpoint: http://tempo:3201/v1/traces
+    auth:
+      authenticator: oauth2client
+
+# Configuration with custom headers
+lgtm/custom_headers:
+  logs:
+    endpoint: http://loki:3100/otlp/v1/logs
+    headers:
+      - name: X-Scope-OrgID
+        value: tenant-1
+      - name: X-Custom-Header
+        value: custom-value
+  metrics:
+    endpoint: http://mimir:8080/otlp/v1/metrics
+    headers:
+      - name: X-Scope-OrgID
+        value: tenant-1
+  traces:
+    endpoint: http://tempo:3201/v1/traces
+    headers:
+      - name: X-Scope-OrgID
+        value: tenant-1
+
+# Configuration with timeouts and retries
+lgtm/with_timeout_retry:
+  logs:
+    endpoint: http://loki:3100/otlp/v1/logs
+    timeout: 30s
+    read_buffer_size: 1024
+    write_buffer_size: 1024
+  metrics:
+    endpoint: http://mimir:8080/otlp/v1/metrics
+    timeout: 30s
+  traces:
+    endpoint: http://tempo:3201/v1/traces
+    timeout: 30s
+
+# Configuration with compression
+lgtm/with_compression:
+  logs:
+    endpoint: http://loki:3100/otlp/v1/logs
+    compression: gzip
+  metrics:
+    endpoint: http://mimir:8080/otlp/v1/metrics
+    compression: gzip
+  traces:
+    endpoint: http://tempo:3201/v1/traces
+    compression: gzip
+
+# Configuration with max idle connections
+lgtm/connection_settings:
+  logs:
+    endpoint: http://loki:3100/otlp/v1/logs
+    max_idle_conns: 100
+    max_idle_conns_per_host: 10
+    max_conns_per_host: 50
+    idle_conn_timeout: 90s
+  metrics:
+    endpoint: http://mimir:8080/otlp/v1/metrics
+    max_idle_conns: 100
+    max_idle_conns_per_host: 10
+  traces:
+    endpoint: http://tempo:3201/v1/traces
+    max_idle_conns: 100
+
+# Configuration with proxy
+lgtm/with_proxy:
+  logs:
+    endpoint: http://loki:3100/otlp/v1/logs
+    proxy_url: http://proxy:8080
+  metrics:
+    endpoint: http://mimir:8080/otlp/v1/metrics
+    proxy_url: http://proxy:8080
+
+# Full configuration with all options
+lgtm/full:
+  logs:
+    endpoint: https://loki:3100/otlp/v1/logs
+    tls:
+      insecure: false
+      cert_file: /certs/client.crt
+      key_file: /certs/client.key
+      ca_file: /certs/ca.crt
+      min_version: "1.2"
+      max_version: "1.3"
+    auth:
+      authenticator: basicauth
+    headers:
+      - name: X-Scope-OrgID
+        value: tenant-1
+      - name: X-Custom-Header
+        value: custom-value
+    timeout: 30s
+    compression: gzip
+    max_idle_conns: 100
+    max_idle_conns_per_host: 10
+    max_conns_per_host: 50
+    idle_conn_timeout: 90s
+    read_buffer_size: 1024
+    write_buffer_size: 1024
+  metrics:
+    endpoint: https://mimir:8080/otlp/v1/metrics
+    tls:
+      insecure: false
+      cert_file: /certs/client.crt
+      key_file: /certs/client.key
+      ca_file: /certs/ca.crt
+    auth:
+      authenticator: bearertokenauth
+    headers:
+      - name: X-Scope-OrgID
+        value: tenant-1
+    timeout: 30s
+    compression: gzip
+  traces:
+    endpoint: https://tempo:3201/v1/traces
+    tls:
+      insecure: false
+      cert_file: /certs/client.crt
+      key_file: /certs/client.key
+      ca_file: /certs/ca.crt
+    auth:
+      authenticator: oauth2client
+    headers:
+      - name: X-Scope-OrgID
+        value: tenant-1
+    timeout: 30s
+    compression: gzip
+
+# Invalid configuration - missing endpoint (should fail validation)
+lgtm/invalid_no_endpoint:
+  logs: {}
+
+# Invalid configuration - no signals configured (should fail validation)
+lgtm/invalid_no_signals: {}
