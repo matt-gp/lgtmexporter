@@ -1,0 +1,106 @@
+services:
+  # Loki for Logs
+  loki:
+    image: grafana/loki:3.0.0
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki/config.yaml:/etc/loki/local-config.yaml
+      - /loki
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Mimir for Metrics
+  mimir:
+    image: grafana/mimir:2.10.0
+    command: 
+      - -config.file=/etc/mimir.yaml
+      - -target=all
+    volumes:
+      - ./mimir/config.yaml:/etc/mimir.yaml
+      - /data
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "http://localhost:8080/ready"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # Tempo for Traces
+  tempo:
+    image: grafana/tempo:2.2.0
+    command: 
+      - -config.file=/etc/tempo.yaml
+    volumes:
+      - ./tempo/config.yaml:/etc/tempo.yaml
+      - /tmp/tempo
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "http://localhost:3200/ready"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # Grafana for Visualization
+  grafana:
+    image: grafana/grafana:10.0.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - /var/lib/grafana
+    depends_on:
+      loki:
+        condition: service_healthy
+      mimir:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # OpenTelemetry Collector - receives OTLP
+  otel-collector:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    ports:
+    - "8888:8888"  # Prometheus metrics endpoint
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otelcol/config.yaml
+    command: ["--config=/etc/otelcol/config.yaml"]
+    depends_on:
+      loki:
+        condition: service_healthy
+      mimir:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:13133/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Test Client using bash scripts - sends all telemetry types
+  test-client:
+    build:
+      context: ./test-client
+      dockerfile: Dockerfile
+    environment:
+      - OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4318
+      - TENANTS=tenant-a,tenant-b
+      - SERVICES=web-app,api-service,database,cache,auth-service
+      - INTERVAL=1
+    command: ["./send-telemetry.sh", "all"]
+    restart: "no"  # Prevent automatic restart
+    depends_on:
+      otel-collector:
+        condition: service_healthy

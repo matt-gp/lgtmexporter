@@ -1,0 +1,86 @@
+
+extensions:
+  health_check:
+    endpoint: "0.0.0.0:13133"
+    path: "/ready"
+      
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 200ms
+    send_batch_size: 512
+    send_batch_max_size: 1024
+  
+  memory_limiter:
+    limit_mib: 256
+    check_interval: 10s
+
+exporters:
+  lgtm:
+    logs:
+      endpoint: http://loki:3100/otlp/v1/logs
+      tls:
+        insecure: true
+    metrics:
+      endpoint: http://mimir:8080/otlp/v1/metrics
+      tls:
+        insecure: true
+    traces:
+      endpoint: http://tempo:3201/v1/traces
+      tls:
+        insecure: true
+    tenant:
+      label: tenant.id
+      labels: 
+      - tenant_id
+      - tenantId
+      - tenantID
+      format: "%s"
+      header: X-Scope-OrgID
+      default: default
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 10
+      queue_size: 1000
+
+  debug:
+    verbosity: basic
+
+service:
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: '0.0.0.0'
+                port: 8888
+  extensions: [health_check]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [lgtm, debug]
+    
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [lgtm, debug]
+    
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [lgtm, debug]
+
