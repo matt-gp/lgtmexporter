@@ -811,7 +811,7 @@ func TestDispatch(t *testing.T) {
 					"tenant-1": {createTestResourceLogs()},
 				},
 				statusCode:       http.StatusBadRequest,
-				wantErr:          false,
+				wantErr:          true,
 				expectedRequests: 1,
 			},
 			{
@@ -912,7 +912,7 @@ func TestDispatch(t *testing.T) {
 					"tenant-1": {createTestResourceMetrics()},
 				},
 				statusCode:       http.StatusBadRequest,
-				wantErr:          false,
+				wantErr:          true,
 				expectedRequests: 1,
 			},
 			{
@@ -1013,7 +1013,7 @@ func TestDispatch(t *testing.T) {
 					"tenant-1": {createTestResourceSpans()},
 				},
 				statusCode:       http.StatusBadRequest,
-				wantErr:          false,
+				wantErr:          true,
 				expectedRequests: 1,
 			},
 			{
