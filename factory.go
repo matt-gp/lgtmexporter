@@ -28,6 +28,7 @@ func NewFactory() exporter.Factory {
 func createDefaultConfig() component.Config {
 	return &Config{
 		QueueBatchConfig: configoptional.Some(exporterhelper.NewDefaultQueueConfig()),
+		ContentType:      contentTypeProtobuf,
 		Tenant: TenantConfig{
 			Label:   "tenant.id",
 			Labels:  []string{},

@@ -13,7 +13,14 @@ import (
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
 
+type contentType string
+
 var _ component.Config = (*Config)(nil)
+
+const (
+	contentTypeJSON     contentType = "json"
+	contentTypeProtobuf contentType = "protobuf"
+)
 
 // Config defines configuration for LGTM exporter.
 type Config struct {
@@ -25,6 +32,8 @@ type Config struct {
 	configretry.BackOffConfig `mapstructure:"retry_on_failure"`
 
 	Tenant TenantConfig `mapstructure:"tenant"`
+
+	ContentType contentType `mapstructure:"content_type"`
 
 	Logs    confighttp.ClientConfig `mapstructure:"logs"`
 	Metrics confighttp.ClientConfig `mapstructure:"metrics"`

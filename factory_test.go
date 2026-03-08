@@ -34,6 +34,7 @@ func TestCreateDefaultConfig(t *testing.T) {
 
 	expectedCfg := &Config{
 		QueueBatchConfig: configoptional.Some(exporterhelper.NewDefaultQueueConfig()),
+		ContentType:      contentTypeProtobuf,
 		Tenant: TenantConfig{
 			Label:   "tenant.id",
 			Labels:  []string{},

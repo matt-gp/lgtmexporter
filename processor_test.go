@@ -56,7 +56,7 @@ func TestNewProcessor(t *testing.T) {
 		signalType  string
 		endpoint    string
 		getResource func(T) pcommon.Resource
-		marshal     func([]T) ([]byte, error)
+		marshal     func([]T, contentType) ([]byte, error)
 	}
 
 	t.Run("logs", func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestNewProcessor(t *testing.T) {
 				getResource: func(rd plog.ResourceLogs) pcommon.Resource {
 					return rd.Resource()
 				},
-				marshal: func(rds []plog.ResourceLogs) ([]byte, error) {
+				marshal: func(rds []plog.ResourceLogs, ct contentType) ([]byte, error) {
 					return []byte("test"), nil
 				},
 			},
@@ -103,6 +103,7 @@ func TestNewProcessor(t *testing.T) {
 					exporterTelemetry,
 					telemetrySettings,
 					tc.signalType,
+					contentTypeProtobuf,
 					tc.getResource,
 					tc.marshal,
 				)
@@ -125,7 +126,7 @@ func TestNewProcessor(t *testing.T) {
 				getResource: func(rd pmetric.ResourceMetrics) pcommon.Resource {
 					return rd.Resource()
 				},
-				marshal: func(rds []pmetric.ResourceMetrics) ([]byte, error) {
+				marshal: func(rds []pmetric.ResourceMetrics, ct contentType) ([]byte, error) {
 					return []byte("test"), nil
 				},
 			},
@@ -160,6 +161,7 @@ func TestNewProcessor(t *testing.T) {
 					exporterTelemetry,
 					telemetrySettings,
 					tc.signalType,
+					contentTypeProtobuf,
 					tc.getResource,
 					tc.marshal,
 				)
@@ -182,7 +184,7 @@ func TestNewProcessor(t *testing.T) {
 				getResource: func(rd ptrace.ResourceSpans) pcommon.Resource {
 					return rd.Resource()
 				},
-				marshal: func(rds []ptrace.ResourceSpans) ([]byte, error) {
+				marshal: func(rds []ptrace.ResourceSpans, ct contentType) ([]byte, error) {
 					return []byte("test"), nil
 				},
 			},
@@ -217,6 +219,7 @@ func TestNewProcessor(t *testing.T) {
 					exporterTelemetry,
 					telemetrySettings,
 					tc.signalType,
+					contentTypeProtobuf,
 					tc.getResource,
 					tc.marshal,
 				)
@@ -441,6 +444,7 @@ func TestSend(t *testing.T) {
 		name          string
 		tenant        string
 		tenantFormat  string
+		contentType   contentType
 		statusCode    int
 		wantErr       bool
 		customHeaders configopaque.MapList
@@ -453,6 +457,7 @@ func TestSend(t *testing.T) {
 				name:         "successful send",
 				tenant:       "tenant-1",
 				tenantFormat: "%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusOK,
 				wantErr:      false,
 				checkRequest: func(t *testing.T, req *http.Request) {
@@ -462,9 +467,29 @@ func TestSend(t *testing.T) {
 				},
 			},
 			{
+				name:         "send with json content type",
+				tenant:       "tenant-1",
+				tenantFormat: "%s",
+				contentType:  contentTypeJSON,
+				statusCode:   http.StatusOK,
+				wantErr:      false,
+				checkRequest: func(t *testing.T, req *http.Request) {
+					assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
+				},
+			},
+			{
+				name:         "send with unsupported content type",
+				tenant:       "tenant-1",
+				tenantFormat: "%s",
+				contentType:  "unsupported",
+				statusCode:   http.StatusOK,
+				wantErr:      true,
+			},
+			{
 				name:         "send with custom header format",
 				tenant:       "tenant-2",
 				tenantFormat: "prefix-%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusOK,
 				wantErr:      false,
 				checkRequest: func(t *testing.T, req *http.Request) {
@@ -475,6 +500,7 @@ func TestSend(t *testing.T) {
 				name:         "send with custom headers",
 				tenant:       "tenant-3",
 				tenantFormat: "%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusOK,
 				wantErr:      false,
 				customHeaders: configopaque.MapList{
@@ -490,6 +516,7 @@ func TestSend(t *testing.T) {
 				name:         "send with error status code",
 				tenant:       "tenant-4",
 				tenantFormat: "%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusBadRequest,
 				wantErr:      false,
 			},
@@ -502,18 +529,20 @@ func TestSend(t *testing.T) {
 
 				mockClient := NewMockHTTPClient(ctrl)
 
-				mockClient.EXPECT().
-					Do(gomock.Any()).
-					DoAndReturn(func(req *http.Request) (*http.Response, error) {
-						if tt.checkRequest != nil {
-							tt.checkRequest(t, req)
-						}
-						return &http.Response{
-							StatusCode: tt.statusCode,
-							Body:       io.NopCloser(bytes.NewBufferString("OK")),
-						}, nil
-					}).
-					Times(1)
+				if !tt.wantErr {
+					mockClient.EXPECT().
+						Do(gomock.Any()).
+						DoAndReturn(func(req *http.Request) (*http.Response, error) {
+							if tt.checkRequest != nil {
+								tt.checkRequest(t, req)
+							}
+							return &http.Response{
+								StatusCode: tt.statusCode,
+								Body:       io.NopCloser(bytes.NewBufferString("OK")),
+							}, nil
+						}).
+						Times(1)
+				}
 
 				processor := &Processor[plog.ResourceLogs]{
 					tenantConfig: TenantConfig{
@@ -522,12 +551,13 @@ func TestSend(t *testing.T) {
 						Header:  "X-Scope-OrgID",
 						Default: "default",
 					},
+					contentType: tt.contentType,
 					clientConfig: confighttp.ClientConfig{
 						Endpoint: "http://localhost:3100/loki/api/v1/push",
 						Headers:  tt.customHeaders,
 					},
 					httpClient: mockClient,
-					marshalResources: func(rls []plog.ResourceLogs) ([]byte, error) {
+					marshalResources: func(rls []plog.ResourceLogs, ct contentType) ([]byte, error) {
 						return []byte("test-data"), nil
 					},
 					exporterTelemetry: func() *exporterTelemetry {
@@ -562,6 +592,7 @@ func TestSend(t *testing.T) {
 				name:         "successful send",
 				tenant:       "tenant-1",
 				tenantFormat: "%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusOK,
 				wantErr:      false,
 				checkRequest: func(t *testing.T, req *http.Request) {
@@ -571,9 +602,29 @@ func TestSend(t *testing.T) {
 				},
 			},
 			{
+				name:         "send with json content type",
+				tenant:       "tenant-1",
+				tenantFormat: "%s",
+				contentType:  contentTypeJSON,
+				statusCode:   http.StatusOK,
+				wantErr:      false,
+				checkRequest: func(t *testing.T, req *http.Request) {
+					assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
+				},
+			},
+			{
+				name:         "send with unsupported content type",
+				tenant:       "tenant-1",
+				tenantFormat: "%s",
+				contentType:  "unsupported",
+				statusCode:   http.StatusOK,
+				wantErr:      true,
+			},
+			{
 				name:         "send with custom header format",
 				tenant:       "tenant-2",
 				tenantFormat: "prefix-%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusOK,
 				wantErr:      false,
 				checkRequest: func(t *testing.T, req *http.Request) {
@@ -584,6 +635,7 @@ func TestSend(t *testing.T) {
 				name:         "send with custom headers",
 				tenant:       "tenant-3",
 				tenantFormat: "%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusOK,
 				wantErr:      false,
 				customHeaders: configopaque.MapList{
@@ -599,6 +651,7 @@ func TestSend(t *testing.T) {
 				name:         "send with error status code",
 				tenant:       "tenant-4",
 				tenantFormat: "%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusBadRequest,
 				wantErr:      false,
 			},
@@ -611,18 +664,20 @@ func TestSend(t *testing.T) {
 
 				mockClient := NewMockHTTPClient(ctrl)
 
-				mockClient.EXPECT().
-					Do(gomock.Any()).
-					DoAndReturn(func(req *http.Request) (*http.Response, error) {
-						if tt.checkRequest != nil {
-							tt.checkRequest(t, req)
-						}
-						return &http.Response{
-							StatusCode: tt.statusCode,
-							Body:       io.NopCloser(bytes.NewBufferString("OK")),
-						}, nil
-					}).
-					Times(1)
+				if !tt.wantErr {
+					mockClient.EXPECT().
+						Do(gomock.Any()).
+						DoAndReturn(func(req *http.Request) (*http.Response, error) {
+							if tt.checkRequest != nil {
+								tt.checkRequest(t, req)
+							}
+							return &http.Response{
+								StatusCode: tt.statusCode,
+								Body:       io.NopCloser(bytes.NewBufferString("OK")),
+							}, nil
+						}).
+						Times(1)
+				}
 
 				processor := &Processor[pmetric.ResourceMetrics]{
 					tenantConfig: TenantConfig{
@@ -631,12 +686,13 @@ func TestSend(t *testing.T) {
 						Header:  "X-Scope-OrgID",
 						Default: "default",
 					},
+					contentType: tt.contentType,
 					clientConfig: confighttp.ClientConfig{
 						Endpoint: "http://localhost:3100/mimir/api/v1/push",
 						Headers:  tt.customHeaders,
 					},
 					httpClient: mockClient,
-					marshalResources: func(rms []pmetric.ResourceMetrics) ([]byte, error) {
+					marshalResources: func(rms []pmetric.ResourceMetrics, ct contentType) ([]byte, error) {
 						return []byte("test-data"), nil
 					},
 					exporterTelemetry: func() *exporterTelemetry {
@@ -671,6 +727,7 @@ func TestSend(t *testing.T) {
 				name:         "successful send",
 				tenant:       "tenant-1",
 				tenantFormat: "%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusOK,
 				wantErr:      false,
 				checkRequest: func(t *testing.T, req *http.Request) {
@@ -680,9 +737,31 @@ func TestSend(t *testing.T) {
 				},
 			},
 			{
+				name:         "send with json content type",
+				tenant:       "tenant-1",
+				tenantFormat: "%s",
+				contentType:  contentTypeJSON,
+				statusCode:   http.StatusOK,
+				wantErr:      false,
+				checkRequest: func(t *testing.T, req *http.Request) {
+					assert.Equal(t, http.MethodPost, req.Method)
+					assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
+					assert.Equal(t, "tenant-1", req.Header.Get("X-Scope-OrgID"))
+				},
+			},
+			{
+				name:         "send with unsupported content type",
+				tenant:       "tenant-1",
+				tenantFormat: "%s",
+				contentType:  "unsupported",
+				statusCode:   http.StatusOK,
+				wantErr:      true,
+			},
+			{
 				name:         "send with custom header format",
 				tenant:       "tenant-2",
 				tenantFormat: "prefix-%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusOK,
 				wantErr:      false,
 				checkRequest: func(t *testing.T, req *http.Request) {
@@ -693,6 +772,7 @@ func TestSend(t *testing.T) {
 				name:         "send with custom headers",
 				tenant:       "tenant-3",
 				tenantFormat: "%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusOK,
 				wantErr:      false,
 				customHeaders: configopaque.MapList{
@@ -708,6 +788,7 @@ func TestSend(t *testing.T) {
 				name:         "send with error status code",
 				tenant:       "tenant-4",
 				tenantFormat: "%s",
+				contentType:  contentTypeProtobuf,
 				statusCode:   http.StatusBadRequest,
 				wantErr:      false,
 			},
@@ -720,18 +801,20 @@ func TestSend(t *testing.T) {
 
 				mockClient := NewMockHTTPClient(ctrl)
 
-				mockClient.EXPECT().
-					Do(gomock.Any()).
-					DoAndReturn(func(req *http.Request) (*http.Response, error) {
-						if tt.checkRequest != nil {
-							tt.checkRequest(t, req)
-						}
-						return &http.Response{
-							StatusCode: tt.statusCode,
-							Body:       io.NopCloser(bytes.NewBufferString("OK")),
-						}, nil
-					}).
-					Times(1)
+				if !tt.wantErr {
+					mockClient.EXPECT().
+						Do(gomock.Any()).
+						DoAndReturn(func(req *http.Request) (*http.Response, error) {
+							if tt.checkRequest != nil {
+								tt.checkRequest(t, req)
+							}
+							return &http.Response{
+								StatusCode: tt.statusCode,
+								Body:       io.NopCloser(bytes.NewBufferString("OK")),
+							}, nil
+						}).
+						Times(1)
+				}
 
 				processor := &Processor[ptrace.ResourceSpans]{
 					tenantConfig: TenantConfig{
@@ -740,12 +823,13 @@ func TestSend(t *testing.T) {
 						Header:  "X-Scope-OrgID",
 						Default: "default",
 					},
+					contentType: tt.contentType,
 					clientConfig: confighttp.ClientConfig{
 						Endpoint: "http://localhost:4318/v1/traces",
 						Headers:  tt.customHeaders,
 					},
 					httpClient: mockClient,
-					marshalResources: func(rss []ptrace.ResourceSpans) ([]byte, error) {
+					marshalResources: func(rss []ptrace.ResourceSpans, ct contentType) ([]byte, error) {
 						return []byte("test-data"), nil
 					},
 					exporterTelemetry: func() *exporterTelemetry {
@@ -850,11 +934,12 @@ func TestDispatch(t *testing.T) {
 						Header:  "X-Scope-OrgID",
 						Default: "default",
 					},
+					contentType: contentTypeProtobuf,
 					clientConfig: confighttp.ClientConfig{
 						Endpoint: "http://localhost:3100/loki/api/v1/push",
 					},
 					httpClient: mockClient,
-					marshalResources: func(rls []plog.ResourceLogs) ([]byte, error) {
+					marshalResources: func(rls []plog.ResourceLogs, ct contentType) ([]byte, error) {
 						return []byte("test-data"), nil
 					},
 					exporterTelemetry: func() *exporterTelemetry {
@@ -951,11 +1036,12 @@ func TestDispatch(t *testing.T) {
 						Header:  "X-Scope-OrgID",
 						Default: "default",
 					},
+					contentType: contentTypeProtobuf,
 					clientConfig: confighttp.ClientConfig{
 						Endpoint: "http://localhost:3100/mimir/api/v1/push",
 					},
 					httpClient: mockClient,
-					marshalResources: func(rms []pmetric.ResourceMetrics) ([]byte, error) {
+					marshalResources: func(rms []pmetric.ResourceMetrics, ct contentType) ([]byte, error) {
 						return []byte("test-data"), nil
 					},
 					exporterTelemetry: func() *exporterTelemetry {
@@ -1052,11 +1138,12 @@ func TestDispatch(t *testing.T) {
 						Header:  "X-Scope-OrgID",
 						Default: "default",
 					},
+					contentType: contentTypeProtobuf,
 					clientConfig: confighttp.ClientConfig{
 						Endpoint: "http://localhost:4318/v1/traces",
 					},
 					httpClient: mockClient,
-					marshalResources: func(rss []ptrace.ResourceSpans) ([]byte, error) {
+					marshalResources: func(rss []ptrace.ResourceSpans, ct contentType) ([]byte, error) {
 						return []byte("test-data"), nil
 					},
 					exporterTelemetry: func() *exporterTelemetry {
