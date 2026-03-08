@@ -42,8 +42,9 @@ type Processor[T ResourceData] struct {
 	exporterTelemetry *exporterTelemetry
 	telemetrySettings component.TelemetrySettings
 	otelcolSignal     string
+	contentType       contentType
 	getResource       func(T) pcommon.Resource
-	marshalResources  func([]T) ([]byte, error)
+	marshalResources  func([]T, contentType) ([]byte, error)
 }
 
 // NewProcessor creates a new Processor instance for the given resource type.
@@ -55,8 +56,9 @@ func NewProcessor[T ResourceData](
 	exporterTelemetry *exporterTelemetry,
 	telemetrySettings component.TelemetrySettings,
 	otelcolSignal string,
+	contentType contentType,
 	getResource func(T) pcommon.Resource,
-	marshalResources func([]T) ([]byte, error),
+	marshalResources func([]T, contentType) ([]byte, error),
 ) (*Processor[T], error) {
 
 	// Create HTTP client with proper auth and TLS configuration
@@ -73,6 +75,7 @@ func NewProcessor[T ResourceData](
 		exporterTelemetry: exporterTelemetry,
 		telemetrySettings: telemetrySettings,
 		otelcolSignal:     otelcolSignal,
+		contentType:       contentType,
 		getResource:       getResource,
 		marshalResources:  marshalResources,
 	}, nil
@@ -188,7 +191,7 @@ func (p *Processor[T]) dispatch(ctx context.Context, tenantMap map[string][]T) e
 func (p *Processor[T]) send(ctx context.Context, tenant string, resources []T) (http.Response, error) {
 
 	// Marshal the request body
-	body, err := p.marshalResources(resources)
+	body, err := p.marshalResources(resources, p.contentType)
 	if err != nil {
 		return http.Response{}, fmt.Errorf("failed to marshal data %w", err)
 	}
@@ -205,7 +208,17 @@ func (p *Processor[T]) send(ctx context.Context, tenant string, resources []T) (
 	}
 
 	// Set headers
-	req.Header.Set("Content-Type", "application/x-protobuf")
+	var contentTypeHeaderVal string
+	switch p.contentType {
+	case contentTypeJSON:
+		contentTypeHeaderVal = "application/json"
+	case contentTypeProtobuf:
+		contentTypeHeaderVal = "application/x-protobuf"
+	default:
+		return http.Response{}, fmt.Errorf("unsupported content type: %s", p.contentType)
+	}
+
+	req.Header.Set("Content-Type", contentTypeHeaderVal)
 	req.Header.Add(p.tenantConfig.Header, fmt.Sprintf(p.tenantConfig.Format, tenant))
 
 	// Add custom headers

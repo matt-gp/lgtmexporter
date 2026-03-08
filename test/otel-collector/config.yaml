@@ -45,6 +45,7 @@ exporters:
       format: "%s"
       header: X-Scope-OrgID
       default: default
+    content_type: csv
     retry_on_failure:
       enabled: true
       initial_interval: 5s

@@ -5,6 +5,7 @@ package lgtmexporter
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/mattgp/lgtmexporter/internal/metadata"
@@ -87,7 +88,7 @@ type lgtmExporter[T ResourceData] struct {
 	otelcolSignal     string
 	processor         *Processor[T]
 	getResource       func(T) pcommon.Resource
-	marshal           func([]T) ([]byte, error)
+	marshal           func([]T, contentType) ([]byte, error)
 }
 
 // newLGTMLogsExporter creates a new instance of lgtmExporter specifically for logs
@@ -103,13 +104,22 @@ func newLGTMLogsExporter(ctx context.Context, set exporter.Settings, cfg Config)
 		getResource: func(rl plog.ResourceLogs) pcommon.Resource {
 			return rl.Resource()
 		},
-		marshal: func(rls []plog.ResourceLogs) ([]byte, error) {
+		marshal: func(rls []plog.ResourceLogs, contentType contentType) ([]byte, error) {
 			data := plog.NewLogs()
 			data.ResourceLogs().EnsureCapacity(len(rls))
 			for _, rl := range rls {
 				rl.CopyTo(data.ResourceLogs().AppendEmpty())
 			}
-			marshaler := plog.ProtoMarshaler{}
+
+			var marshaler plog.Marshaler
+			switch contentType {
+			case contentTypeJSON:
+				marshaler = &plog.JSONMarshaler{}
+			case contentTypeProtobuf:
+				marshaler = &plog.ProtoMarshaler{}
+			default:
+				return nil, fmt.Errorf("unsupported content type: %s", contentType)
+			}
 			return marshaler.MarshalLogs(data)
 		},
 	}, nil
@@ -128,13 +138,22 @@ func newLGTMMetricsExporter(ctx context.Context, set exporter.Settings, cfg Conf
 		getResource: func(rm pmetric.ResourceMetrics) pcommon.Resource {
 			return rm.Resource()
 		},
-		marshal: func(rms []pmetric.ResourceMetrics) ([]byte, error) {
+		marshal: func(rms []pmetric.ResourceMetrics, contentType contentType) ([]byte, error) {
 			data := pmetric.NewMetrics()
 			data.ResourceMetrics().EnsureCapacity(len(rms))
 			for _, rm := range rms {
 				rm.CopyTo(data.ResourceMetrics().AppendEmpty())
 			}
-			marshaler := pmetric.ProtoMarshaler{}
+
+			var marshaler pmetric.Marshaler
+			switch contentType {
+			case contentTypeJSON:
+				marshaler = &pmetric.JSONMarshaler{}
+			case contentTypeProtobuf:
+				marshaler = &pmetric.ProtoMarshaler{}
+			default:
+				return nil, fmt.Errorf("unsupported content type: %s", contentType)
+			}
 			return marshaler.MarshalMetrics(data)
 		},
 	}, nil
@@ -153,13 +172,23 @@ func newLGTMTracesExporter(ctx context.Context, set exporter.Settings, cfg Confi
 		getResource: func(rs ptrace.ResourceSpans) pcommon.Resource {
 			return rs.Resource()
 		},
-		marshal: func(rss []ptrace.ResourceSpans) ([]byte, error) {
+		marshal: func(rss []ptrace.ResourceSpans, contentType contentType) ([]byte, error) {
 			data := ptrace.NewTraces()
 			data.ResourceSpans().EnsureCapacity(len(rss))
 			for _, rs := range rss {
 				rs.CopyTo(data.ResourceSpans().AppendEmpty())
 			}
-			marshaler := ptrace.ProtoMarshaler{}
+
+			var marshaler ptrace.Marshaler
+			switch contentType {
+			case contentTypeJSON:
+				marshaler = &ptrace.JSONMarshaler{}
+			case contentTypeProtobuf:
+				marshaler = &ptrace.ProtoMarshaler{}
+			default:
+				return nil, fmt.Errorf("unsupported content type: %s", contentType)
+			}
+
 			return marshaler.MarshalTraces(data)
 		},
 	}, nil
@@ -214,6 +243,7 @@ func (e *lgtmExporter[T]) start(ctx context.Context, host component.Host) (err e
 		exporterTelemetry,
 		e.telemetrySettings,
 		e.otelcolSignal,
+		e.cfg.ContentType,
 		e.getResource,
 		e.marshal,
 	)

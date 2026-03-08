@@ -121,6 +121,16 @@ service:
 
 For more details on authentication, see [configauth](https://github.com/open-telemetry/opentelemetry-collector/blob/main/config/configauth/README.md).
 
+### Content Type Configuration
+
+The exporter supports configuring the content type for the request body sent to LGTM backends:
+
+- `content_type` (default = `protobuf`): The format used to encode telemetry data in the request body
+  - `protobuf`: Sends data in Protocol Buffers binary format with `Content-Type: application/x-protobuf` header (recommended)
+  - `json`: Sends data in JSON format with `Content-Type: application/json` header
+
+Protocol Buffers (protobuf) is the recommended format as it is more efficient in terms of size and serialization performance. JSON format may be useful for debugging or compatibility with specific backend configurations.
+
 ### Tenant Configuration
 The exporter supports multi-tenancy by extracting tenant IDs from resource attributes and setting them in HTTP headers:
 
@@ -194,6 +204,7 @@ exporters:
       header: X-Scope-OrgID
       format: "%s-dev"
       default: default
+    content_type: protbuf
     retry_on_failure:
       enabled: true
       initial_interval: 5s
@@ -298,6 +309,7 @@ exporters:
       format: "%s"
       header: X-Scope-OrgID
       default: anonymous
+    content_type: protbuf
     retry_on_failure:
       enabled: true
       initial_interval: 5s
@@ -324,6 +336,51 @@ service:
       processors: [batch]
       exporters: [lgtm]
 ```
+
+### Configuration with JSON Content Type
+
+This example shows how to configure the exporter to send data in JSON format instead of the default Protocol Buffers format:
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+
+exporters:
+  lgtm:
+    content_type: json  # Send data as JSON instead of protobuf
+    logs:
+      endpoint: http://loki:3100/otlp/v1/logs
+    metrics:
+      endpoint: http://mimir:8080/otlp/v1/metrics
+    traces:
+      endpoint: http://tempo:3200/v1/traces
+    tenant:
+      label: tenant.id
+      default: default
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [lgtm]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [lgtm]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [lgtm]
+```
+
+**Note**: Protocol Buffers (`protobuf`) is recommended for production use as it provides better performance and smaller payload sizes. JSON format is primarily useful for debugging or specific backend requirements.
 
 ## Telemetry
 

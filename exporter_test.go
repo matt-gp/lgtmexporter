@@ -30,54 +30,222 @@ func TestNewExporterTelemetry(t *testing.T) {
 }
 
 func TestNewLGTMLogsExporter(t *testing.T) {
-	cfg := &Config{
-		Logs: confighttp.ClientConfig{
-			Endpoint: "http://localhost:3100/otlp/v1/logs",
+	tests := []struct {
+		name           string
+		endpoint       string
+		contentType    contentType
+		wantSignal     string
+		wantErr        bool
+		wantMarshalErr bool
+	}{
+		{
+			name:           "with protobuf content type",
+			endpoint:       "http://localhost:3100/otlp/v1/logs",
+			contentType:    contentTypeProtobuf,
+			wantSignal:     "logs",
+			wantErr:        false,
+			wantMarshalErr: false,
+		},
+		{
+			name:           "with json content type",
+			endpoint:       "http://localhost:3100/otlp/v1/logs",
+			contentType:    contentTypeJSON,
+			wantSignal:     "logs",
+			wantErr:        false,
+			wantMarshalErr: false,
+		},
+		{
+			name:           "with unsupported content type",
+			endpoint:       "http://localhost:3100/otlp/v1/logs",
+			contentType:    "unsupported",
+			wantSignal:     "logs",
+			wantErr:        false,
+			wantMarshalErr: true,
 		},
 	}
 
-	set := exportertest.NewNopSettings(component.MustNewType("lgtm"))
-	exp, err := newLGTMLogsExporter(context.Background(), set, *cfg)
-	assert.NoError(t, err)
-	assert.NotNil(t, exp)
-	assert.Equal(t, "logs", exp.otelcolSignal)
-	assert.Equal(t, cfg.Logs.Endpoint, exp.clientConfig.Endpoint)
-	assert.NotNil(t, exp.getResource)
-	assert.NotNil(t, exp.marshal)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Logs: confighttp.ClientConfig{
+					Endpoint: tt.endpoint,
+				},
+			}
+
+			set := exportertest.NewNopSettings(component.MustNewType("lgtm"))
+			exp, err := newLGTMLogsExporter(context.Background(), set, *cfg)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, exp)
+				assert.Equal(t, tt.wantSignal, exp.otelcolSignal)
+				assert.Equal(t, cfg.Logs.Endpoint, exp.clientConfig.Endpoint)
+				assert.NotNil(t, exp.getResource)
+				assert.NotNil(t, exp.marshal)
+
+				// Test marshal with content type
+				rl := plog.NewResourceLogs()
+				rl.Resource().Attributes().PutStr("tenant.id", "test-tenant")
+				data, marshalErr := exp.marshal([]plog.ResourceLogs{rl}, tt.contentType)
+
+				if tt.wantMarshalErr {
+					assert.Error(t, marshalErr)
+					assert.Contains(t, marshalErr.Error(), "unsupported content type")
+				} else {
+					assert.NoError(t, marshalErr)
+					assert.NotNil(t, data)
+				}
+			}
+		})
+	}
 }
 
 func TestNewLGTMMetricsExporter(t *testing.T) {
-	cfg := &Config{
-		Metrics: confighttp.ClientConfig{
-			Endpoint: "http://localhost:9009/otlp/v1/metrics",
+	tests := []struct {
+		name           string
+		endpoint       string
+		contentType    contentType
+		wantSignal     string
+		wantErr        bool
+		wantMarshalErr bool
+	}{
+		{
+			name:           "with protobuf content type",
+			endpoint:       "http://localhost:9009/otlp/v1/metrics",
+			contentType:    contentTypeProtobuf,
+			wantSignal:     "metrics",
+			wantErr:        false,
+			wantMarshalErr: false,
+		},
+		{
+			name:           "with json content type",
+			endpoint:       "http://localhost:9009/otlp/v1/metrics",
+			contentType:    contentTypeJSON,
+			wantSignal:     "metrics",
+			wantErr:        false,
+			wantMarshalErr: false,
+		},
+		{
+			name:           "with unsupported content type",
+			endpoint:       "http://localhost:9009/otlp/v1/metrics",
+			contentType:    "unsupported",
+			wantSignal:     "metrics",
+			wantErr:        false,
+			wantMarshalErr: true,
 		},
 	}
 
-	set := exportertest.NewNopSettings(component.MustNewType("lgtm"))
-	exp, err := newLGTMMetricsExporter(context.Background(), set, *cfg)
-	assert.NoError(t, err)
-	assert.NotNil(t, exp)
-	assert.Equal(t, "metrics", exp.otelcolSignal)
-	assert.Equal(t, cfg.Metrics.Endpoint, exp.clientConfig.Endpoint)
-	assert.NotNil(t, exp.getResource)
-	assert.NotNil(t, exp.marshal)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Metrics: confighttp.ClientConfig{
+					Endpoint: tt.endpoint,
+				},
+			}
+
+			set := exportertest.NewNopSettings(component.MustNewType("lgtm"))
+			exp, err := newLGTMMetricsExporter(context.Background(), set, *cfg)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, exp)
+				assert.Equal(t, tt.wantSignal, exp.otelcolSignal)
+				assert.Equal(t, cfg.Metrics.Endpoint, exp.clientConfig.Endpoint)
+				assert.NotNil(t, exp.getResource)
+				assert.NotNil(t, exp.marshal)
+
+				// Test marshal with content type
+				rm := pmetric.NewResourceMetrics()
+				rm.Resource().Attributes().PutStr("tenant.id", "test-tenant")
+				data, marshalErr := exp.marshal([]pmetric.ResourceMetrics{rm}, tt.contentType)
+
+				if tt.wantMarshalErr {
+					assert.Error(t, marshalErr)
+					assert.Contains(t, marshalErr.Error(), "unsupported content type")
+				} else {
+					assert.NoError(t, marshalErr)
+					assert.NotNil(t, data)
+				}
+			}
+		})
+	}
 }
 
 func TestNewLGTMTracesExporter(t *testing.T) {
-	cfg := &Config{
-		Traces: confighttp.ClientConfig{
-			Endpoint: "http://localhost:4317/v1/traces",
+	tests := []struct {
+		name           string
+		endpoint       string
+		contentType    contentType
+		wantSignal     string
+		wantErr        bool
+		wantMarshalErr bool
+	}{
+		{
+			name:           "with protobuf content type",
+			endpoint:       "http://localhost:4317/v1/traces",
+			contentType:    contentTypeProtobuf,
+			wantSignal:     "traces",
+			wantErr:        false,
+			wantMarshalErr: false,
+		},
+		{
+			name:           "with json content type",
+			endpoint:       "http://localhost:4317/v1/traces",
+			contentType:    contentTypeJSON,
+			wantSignal:     "traces",
+			wantErr:        false,
+			wantMarshalErr: false,
+		},
+		{
+			name:           "with unsupported content type",
+			endpoint:       "http://localhost:4317/v1/traces",
+			contentType:    "unsupported",
+			wantSignal:     "traces",
+			wantErr:        false,
+			wantMarshalErr: true,
 		},
 	}
 
-	set := exportertest.NewNopSettings(component.MustNewType("lgtm"))
-	exp, err := newLGTMTracesExporter(context.Background(), set, *cfg)
-	assert.NoError(t, err)
-	assert.NotNil(t, exp)
-	assert.Equal(t, "traces", exp.otelcolSignal)
-	assert.Equal(t, cfg.Traces.Endpoint, exp.clientConfig.Endpoint)
-	assert.NotNil(t, exp.getResource)
-	assert.NotNil(t, exp.marshal)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Traces: confighttp.ClientConfig{
+					Endpoint: tt.endpoint,
+				},
+			}
+
+			set := exportertest.NewNopSettings(component.MustNewType("lgtm"))
+			exp, err := newLGTMTracesExporter(context.Background(), set, *cfg)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, exp)
+				assert.Equal(t, tt.wantSignal, exp.otelcolSignal)
+				assert.Equal(t, cfg.Traces.Endpoint, exp.clientConfig.Endpoint)
+				assert.NotNil(t, exp.getResource)
+				assert.NotNil(t, exp.marshal)
+
+				// Test marshal with content type
+				rs := ptrace.NewResourceSpans()
+				rs.Resource().Attributes().PutStr("tenant.id", "test-tenant")
+				data, marshalErr := exp.marshal([]ptrace.ResourceSpans{rs}, tt.contentType)
+
+				if tt.wantMarshalErr {
+					assert.Error(t, marshalErr)
+					assert.Contains(t, marshalErr.Error(), "unsupported content type")
+				} else {
+					assert.NoError(t, marshalErr)
+					assert.NotNil(t, data)
+				}
+			}
+		})
+	}
 }
 
 func TestStart(t *testing.T) {
