@@ -87,41 +87,10 @@ func (p *Processor[T]) partition(resources []T) map[string][]T {
 	tenantMap := make(map[string][]T)
 
 	for _, resourceData := range resources {
-		resource := p.getResource(resourceData)
-		resourcePtr := &resource
-
-		tenant := ""
-
-		// First, check for the dedicated tenant label
-		if p.tenantConfig.Label != "" {
-			for k, v := range resourcePtr.Attributes().All() {
-				if k == p.tenantConfig.Label {
-					tenant = v.AsString()
-					break
-				}
-			}
-		}
-
-		// If not found and we have additional labels, check those
-		if tenant == "" && len(p.tenantConfig.Labels) > 0 {
-			for k, v := range resourcePtr.Attributes().All() {
-				if slices.Contains(p.tenantConfig.Labels, k) {
-					tenant = v.AsString()
-					break
-				}
-			}
-		}
-
-		// If still not found, use the default tenant if configured
+		tenant := p.extractTenantFromResource(p.getResource(resourceData))
 		if tenant == "" {
-			if p.tenantConfig.Default == "" {
-				p.telemetrySettings.Logger.Warn("No tenant information found for resource and no default tenant configured. Skipping resource.")
-				continue
-			}
-
-			tenant = p.tenantConfig.Default
+			continue
 		}
-
 		tenantMap[tenant] = append(tenantMap[tenant], resourceData)
 	}
 
@@ -249,4 +218,43 @@ func (p *Processor[T]) send(ctx context.Context, tenant string, resources []T) (
 	}()
 
 	return *resp, nil
+}
+
+// extractTenantFromResource extracts the tenant information from the resource attributes
+// based on the configured tenant labels and returns it.
+func (p *Processor[T]) extractTenantFromResource(resource pcommon.Resource) string {
+
+	tenant := ""
+
+	// First, check for the dedicated tenant label
+	if p.tenantConfig.Label != "" {
+		for k, v := range resource.Attributes().All() {
+			if k == p.tenantConfig.Label {
+				tenant = v.AsString()
+				break
+			}
+		}
+	}
+
+	// If not found and we have additional labels, check those
+	if tenant == "" && len(p.tenantConfig.Labels) > 0 {
+		for k, v := range resource.Attributes().All() {
+			if slices.Contains(p.tenantConfig.Labels, k) {
+				tenant = v.AsString()
+				break
+			}
+		}
+	}
+
+	// If still not found, use the default tenant if configured
+	if tenant == "" {
+		if p.tenantConfig.Default == "" {
+			p.telemetrySettings.Logger.Warn("No tenant information found for resource and no default tenant configured. Skipping resource.")
+			return ""
+		}
+
+		tenant = p.tenantConfig.Default
+	}
+
+	return tenant
 }
