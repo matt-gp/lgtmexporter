@@ -204,7 +204,7 @@ exporters:
       header: X-Scope-OrgID
       format: "%s-dev"
       default: default
-    content_type: protbuf
+    content_type: protobuf
     retry_on_failure:
       enabled: true
       initial_interval: 5s
@@ -309,7 +309,7 @@ exporters:
       format: "%s"
       header: X-Scope-OrgID
       default: anonymous
-    content_type: protbuf
+    content_type: protobuf
     retry_on_failure:
       enabled: true
       initial_interval: 5s

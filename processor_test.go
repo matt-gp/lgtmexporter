@@ -236,206 +236,298 @@ func TestNewProcessor(t *testing.T) {
 
 func TestPartition(t *testing.T) {
 
-	type testCase[T ResourceData] struct {
-		name            string
-		tenantConfig    TenantConfig
-		setupData       func() []T
-		expectedTenants []string
-	}
 	t.Run("logs", func(t *testing.T) {
-		tests := []testCase[plog.ResourceLogs]{
-			{
-				name: "partition by tenant label",
-				tenantConfig: TenantConfig{
-					Label:   "tenant.id",
-					Format:  "%s",
-					Header:  "X-Scope-OrgID",
-					Default: "default",
-				},
-				setupData: func() []plog.ResourceLogs {
-					rl1 := plog.NewResourceLogs()
-					rl1.Resource().Attributes().PutStr("tenant.id", "tenant-1")
-					rl2 := plog.NewResourceLogs()
-					rl2.Resource().Attributes().PutStr("tenant.id", "tenant-2")
-					rl3 := plog.NewResourceLogs()
-					rl3.Resource().Attributes().PutStr("tenant.id", "tenant-1")
-					return []plog.ResourceLogs{rl1, rl2, rl3}
-				},
-				expectedTenants: []string{"tenant-1", "tenant-2"},
+		processor := &Processor[plog.ResourceLogs]{
+			tenantConfig: TenantConfig{
+				Label:   "tenant.id",
+				Format:  "%s",
+				Header:  "X-Scope-OrgID",
+				Default: "default",
 			},
-			{
-				name: "partition with default tenant",
-				tenantConfig: TenantConfig{
-					Label:   "tenant.id",
-					Format:  "%s",
-					Header:  "X-Scope-OrgID",
-					Default: "default-tenant",
-				},
-				setupData: func() []plog.ResourceLogs {
-					rl1 := plog.NewResourceLogs()
-					rl1.Resource().Attributes().PutStr("tenant.id", "tenant-1")
-					rl2 := plog.NewResourceLogs()
-					return []plog.ResourceLogs{rl1, rl2}
-				},
-				expectedTenants: []string{"tenant-1", "default-tenant"},
+			getResource: func(rl plog.ResourceLogs) pcommon.Resource {
+				return rl.Resource()
+			},
+			telemetrySettings: component.TelemetrySettings{
+				Logger: zap.NewNop(),
 			},
 		}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				processor := &Processor[plog.ResourceLogs]{
-					tenantConfig: tt.tenantConfig,
-					getResource: func(rl plog.ResourceLogs) pcommon.Resource {
-						return rl.Resource()
-					},
-					telemetrySettings: component.TelemetrySettings{
-						Logger: zap.NewNop(),
-					},
-				}
+		// Create test data with multiple tenants and multiple resources per tenant
+		rl1 := plog.NewResourceLogs()
+		rl1.Resource().Attributes().PutStr("tenant.id", "tenant-1")
+		rl2 := plog.NewResourceLogs()
+		rl2.Resource().Attributes().PutStr("tenant.id", "tenant-2")
+		rl3 := plog.NewResourceLogs()
+		rl3.Resource().Attributes().PutStr("tenant.id", "tenant-1")
+		rl4 := plog.NewResourceLogs()
+		rl4.Resource().Attributes().PutStr("tenant.id", "tenant-3")
 
-				result := processor.partition(tt.setupData())
-				tenantsFound := make(map[string]bool)
-				for tenant := range result {
-					tenantsFound[tenant] = true
-				}
+		resources := []plog.ResourceLogs{rl1, rl2, rl3, rl4}
+		result := processor.partition(resources)
 
-				for _, expectedTenant := range tt.expectedTenants {
-					assert.True(t, tenantsFound[expectedTenant], "Expected tenant %s not found in result", expectedTenant)
-				}
-				assert.Equal(t, len(tt.expectedTenants), len(result), "Number of tenants doesn't match")
-			})
-		}
+		// Verify correct number of tenants
+		assert.Equal(t, 3, len(result))
+
+		// Verify resources are grouped by tenant
+		assert.Len(t, result["tenant-1"], 2)
+		assert.Len(t, result["tenant-2"], 1)
+		assert.Len(t, result["tenant-3"], 1)
 	})
 
 	t.Run("metrics", func(t *testing.T) {
-		tests := []testCase[pmetric.ResourceMetrics]{
-			{
-				name: "partition by tenant label",
-				tenantConfig: TenantConfig{
-					Label:   "tenant.id",
-					Format:  "%s",
-					Header:  "X-Scope-OrgID",
-					Default: "default",
-				},
-				setupData: func() []pmetric.ResourceMetrics {
-					rm1 := pmetric.NewResourceMetrics()
-					rm1.Resource().Attributes().PutStr("tenant.id", "tenant-1")
-					rm2 := pmetric.NewResourceMetrics()
-					rm2.Resource().Attributes().PutStr("tenant.id", "tenant-2")
-					rm3 := pmetric.NewResourceMetrics()
-					rm3.Resource().Attributes().PutStr("tenant.id", "tenant-1")
-					return []pmetric.ResourceMetrics{rm1, rm2, rm3}
-				},
-				expectedTenants: []string{"tenant-1", "tenant-2"},
+		processor := &Processor[pmetric.ResourceMetrics]{
+			tenantConfig: TenantConfig{
+				Label:   "tenant.id",
+				Format:  "%s",
+				Header:  "X-Scope-OrgID",
+				Default: "default",
 			},
-			{
-				name: "partition with default tenant",
-				tenantConfig: TenantConfig{
-					Label:   "tenant.id",
-					Format:  "%s",
-					Header:  "X-Scope-OrgID",
-					Default: "default-tenant",
-				},
-				setupData: func() []pmetric.ResourceMetrics {
-					rm1 := pmetric.NewResourceMetrics()
-					rm1.Resource().Attributes().PutStr("tenant.id", "tenant-1")
-					rm2 := pmetric.NewResourceMetrics()
-					return []pmetric.ResourceMetrics{rm1, rm2}
-				},
-				expectedTenants: []string{"tenant-1", "default-tenant"},
+			getResource: func(rm pmetric.ResourceMetrics) pcommon.Resource {
+				return rm.Resource()
+			},
+			telemetrySettings: component.TelemetrySettings{
+				Logger: zap.NewNop(),
 			},
 		}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				processor := &Processor[pmetric.ResourceMetrics]{
-					tenantConfig: tt.tenantConfig,
-					getResource: func(rm pmetric.ResourceMetrics) pcommon.Resource {
-						return rm.Resource()
-					},
-					telemetrySettings: component.TelemetrySettings{
-						Logger: zap.NewNop(),
-					},
-				}
+		// Create test data with multiple tenants and multiple resources per tenant
+		rm1 := pmetric.NewResourceMetrics()
+		rm1.Resource().Attributes().PutStr("tenant.id", "tenant-1")
+		rm2 := pmetric.NewResourceMetrics()
+		rm2.Resource().Attributes().PutStr("tenant.id", "tenant-2")
+		rm3 := pmetric.NewResourceMetrics()
+		rm3.Resource().Attributes().PutStr("tenant.id", "tenant-1")
+		rm4 := pmetric.NewResourceMetrics()
+		rm4.Resource().Attributes().PutStr("tenant.id", "tenant-3")
 
-				result := processor.partition(tt.setupData())
-				tenantsFound := make(map[string]bool)
-				for tenant := range result {
-					tenantsFound[tenant] = true
-				}
+		resources := []pmetric.ResourceMetrics{rm1, rm2, rm3, rm4}
+		result := processor.partition(resources)
 
-				for _, expectedTenant := range tt.expectedTenants {
-					assert.True(t, tenantsFound[expectedTenant], "Expected tenant %s not found in result", expectedTenant)
-				}
-				assert.Equal(t, len(tt.expectedTenants), len(result), "Number of tenants doesn't match")
-			})
-		}
+		// Verify correct number of tenants
+		assert.Equal(t, 3, len(result))
+
+		// Verify resources are grouped by tenant
+		assert.Len(t, result["tenant-1"], 2)
+		assert.Len(t, result["tenant-2"], 1)
+		assert.Len(t, result["tenant-3"], 1)
 	})
 
 	t.Run("traces", func(t *testing.T) {
-		tests := []testCase[ptrace.ResourceSpans]{
-			{
-				name: "partition by tenant label",
-				tenantConfig: TenantConfig{
-					Label:   "tenant.id",
-					Format:  "%s",
-					Header:  "X-Scope-OrgID",
-					Default: "default",
-				},
-				setupData: func() []ptrace.ResourceSpans {
-					rs1 := ptrace.NewResourceSpans()
-					rs1.Resource().Attributes().PutStr("tenant.id", "tenant-1")
-					rs2 := ptrace.NewResourceSpans()
-					rs2.Resource().Attributes().PutStr("tenant.id", "tenant-2")
-					rs3 := ptrace.NewResourceSpans()
-					rs3.Resource().Attributes().PutStr("tenant.id", "tenant-1")
-					return []ptrace.ResourceSpans{rs1, rs2, rs3}
-				},
-				expectedTenants: []string{"tenant-1", "tenant-2"},
+		processor := &Processor[ptrace.ResourceSpans]{
+			tenantConfig: TenantConfig{
+				Label:   "tenant.id",
+				Format:  "%s",
+				Header:  "X-Scope-OrgID",
+				Default: "default",
 			},
-			{
-				name: "partition with default tenant",
-				tenantConfig: TenantConfig{
-					Label:   "tenant.id",
-					Format:  "%s",
-					Header:  "X-Scope-OrgID",
-					Default: "default-tenant",
-				},
-				setupData: func() []ptrace.ResourceSpans {
-					rs1 := ptrace.NewResourceSpans()
-					rs1.Resource().Attributes().PutStr("tenant.id", "tenant-1")
-					rs2 := ptrace.NewResourceSpans()
-					return []ptrace.ResourceSpans{rs1, rs2}
-				},
-				expectedTenants: []string{"tenant-1", "default-tenant"},
+			getResource: func(rs ptrace.ResourceSpans) pcommon.Resource {
+				return rs.Resource()
+			},
+			telemetrySettings: component.TelemetrySettings{
+				Logger: zap.NewNop(),
 			},
 		}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				processor := &Processor[ptrace.ResourceSpans]{
-					tenantConfig: tt.tenantConfig,
-					getResource: func(rs ptrace.ResourceSpans) pcommon.Resource {
-						return rs.Resource()
-					},
-					telemetrySettings: component.TelemetrySettings{
-						Logger: zap.NewNop(),
-					},
-				}
+		// Create test data with multiple tenants and multiple resources per tenant
+		rs1 := ptrace.NewResourceSpans()
+		rs1.Resource().Attributes().PutStr("tenant.id", "tenant-1")
+		rs2 := ptrace.NewResourceSpans()
+		rs2.Resource().Attributes().PutStr("tenant.id", "tenant-2")
+		rs3 := ptrace.NewResourceSpans()
+		rs3.Resource().Attributes().PutStr("tenant.id", "tenant-1")
+		rs4 := ptrace.NewResourceSpans()
+		rs4.Resource().Attributes().PutStr("tenant.id", "tenant-3")
 
-				result := processor.partition(tt.setupData())
-				tenantsFound := make(map[string]bool)
-				for tenant := range result {
-					tenantsFound[tenant] = true
-				}
+		resources := []ptrace.ResourceSpans{rs1, rs2, rs3, rs4}
+		result := processor.partition(resources)
 
-				for _, expectedTenant := range tt.expectedTenants {
-					assert.True(t, tenantsFound[expectedTenant], "Expected tenant %s not found in result", expectedTenant)
-				}
-				assert.Equal(t, len(tt.expectedTenants), len(result), "Number of tenants doesn't match")
-			})
-		}
+		// Verify correct number of tenants
+		assert.Equal(t, 3, len(result))
+
+		// Verify resources are grouped by tenant
+		assert.Len(t, result["tenant-1"], 2)
+		assert.Len(t, result["tenant-2"], 1)
+		assert.Len(t, result["tenant-3"], 1)
 	})
+}
+
+func TestExtractTenantFromResource(t *testing.T) {
+
+	type testCase struct {
+		name           string
+		tenantConfig   TenantConfig
+		setupResource  func() pcommon.Resource
+		expectedTenant string
+	}
+
+	tests := []testCase{
+		{
+			name: "extract tenant from primary label",
+			tenantConfig: TenantConfig{
+				Label:   "tenant.id",
+				Format:  "%s",
+				Header:  "X-Scope-OrgID",
+				Default: "default",
+			},
+			setupResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("tenant.id", "tenant-1")
+				r.Attributes().PutStr("service.name", "test-service")
+				return r
+			},
+			expectedTenant: "tenant-1",
+		},
+		{
+			name: "extract tenant from labels list when primary label not found",
+			tenantConfig: TenantConfig{
+				Label:   "tenant.id",
+				Labels:  []string{"org.id", "namespace"},
+				Format:  "%s",
+				Header:  "X-Scope-OrgID",
+				Default: "default",
+			},
+			setupResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("org.id", "org-123")
+				r.Attributes().PutStr("service.name", "test-service")
+				return r
+			},
+			expectedTenant: "org-123",
+		},
+		{
+			name: "extract tenant from second label in labels list",
+			tenantConfig: TenantConfig{
+				Label:   "tenant.id",
+				Labels:  []string{"org.id", "namespace", "customer.id"},
+				Format:  "%s",
+				Header:  "X-Scope-OrgID",
+				Default: "default",
+			},
+			setupResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("namespace", "prod-namespace")
+				r.Attributes().PutStr("customer.id", "customer-456")
+				r.Attributes().PutStr("service.name", "test-service")
+				return r
+			},
+			expectedTenant: "prod-namespace",
+		},
+		{
+			name: "use default tenant when no labels match",
+			tenantConfig: TenantConfig{
+				Label:   "tenant.id",
+				Labels:  []string{"org.id", "namespace"},
+				Format:  "%s",
+				Header:  "X-Scope-OrgID",
+				Default: "default-tenant",
+			},
+			setupResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("service.name", "test-service")
+				r.Attributes().PutStr("other.label", "other-value")
+				return r
+			},
+			expectedTenant: "default-tenant",
+		},
+		{
+			name: "return empty string when no labels match and no default",
+			tenantConfig: TenantConfig{
+				Label:  "tenant.id",
+				Labels: []string{"org.id", "namespace"},
+				Format: "%s",
+				Header: "X-Scope-OrgID",
+			},
+			setupResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("service.name", "test-service")
+				return r
+			},
+			expectedTenant: "",
+		},
+		{
+			name: "primary label takes precedence over labels list",
+			tenantConfig: TenantConfig{
+				Label:   "tenant.id",
+				Labels:  []string{"org.id", "namespace"},
+				Format:  "%s",
+				Header:  "X-Scope-OrgID",
+				Default: "default",
+			},
+			setupResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("tenant.id", "primary-tenant")
+				r.Attributes().PutStr("org.id", "org-fallback")
+				r.Attributes().PutStr("namespace", "namespace-fallback")
+				return r
+			},
+			expectedTenant: "primary-tenant",
+		},
+		{
+			name: "handle empty tenant label value falls back to default",
+			tenantConfig: TenantConfig{
+				Label:   "tenant.id",
+				Format:  "%s",
+				Header:  "X-Scope-OrgID",
+				Default: "default-tenant",
+			},
+			setupResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("tenant.id", "")
+				r.Attributes().PutStr("service.name", "test-service")
+				return r
+			},
+			expectedTenant: "default-tenant",
+		},
+		{
+			name: "empty primary label falls back to labels list",
+			tenantConfig: TenantConfig{
+				Label:   "tenant.id",
+				Labels:  []string{"org.id", "namespace"},
+				Format:  "%s",
+				Header:  "X-Scope-OrgID",
+				Default: "default-tenant",
+			},
+			setupResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("tenant.id", "")
+				r.Attributes().PutStr("org.id", "fallback-org")
+				r.Attributes().PutStr("service.name", "test-service")
+				return r
+			},
+			expectedTenant: "fallback-org",
+		},
+		{
+			name: "extract tenant with no labels configured, only default",
+			tenantConfig: TenantConfig{
+				Format:  "%s",
+				Header:  "X-Scope-OrgID",
+				Default: "default-only",
+			},
+			setupResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("service.name", "test-service")
+				r.Attributes().PutStr("any.attribute", "any-value")
+				return r
+			},
+			expectedTenant: "default-only",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			processor := &Processor[plog.ResourceLogs]{
+				tenantConfig: tt.tenantConfig,
+				telemetrySettings: component.TelemetrySettings{
+					Logger: zap.NewNop(),
+				},
+			}
+
+			resource := tt.setupResource()
+			result := processor.extractTenantFromResource(resource)
+
+			assert.Equal(t, tt.expectedTenant, result)
+		})
+	}
 }
 
 func TestSend(t *testing.T) {
